@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Texas Hold'em vs AI (8-max)</title>
+<style>
+  :root {
+    --table: #0b5c3b;
+    --felt: #0d6e47;
+    --gold: #d4af37;
+    --chip: #1a1a1a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #111;
+    color: #eee;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 10px;
+  }
+  h1 { font-size: 1.4rem; margin: 8px 0; color: var(--gold); }
+  .controls {
+    display: flex; gap: 12px; flex-wrap: wrap; justify-content: center;
+    margin-bottom: 12px; align-items: center;
+  }
+  .controls label { font-size: 0.9rem; }
+  select, button {
+    padding: 8px 14px; border-radius: 6px; border: none;
+    font-size: 0.95rem; cursor: pointer;
+  }
+  select { background: #222; color: #fff; }
+  button {
+    background: var(--gold); color: #111; font-weight: 600;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: #444; color: #fff; }
+  button.danger { background: #c0392b; color: #fff; }
+  button.success { background: #27ae60; color: #fff; }
+
+  .table-wrap {
+    position: relative;
+    width: min(960px, 96vw);
+    height: 580px;
+    margin: 10px auto;
+  }
+  .table {
+    position: absolute; inset: 0;
+    background: radial-gradient(ellipse at center, var(--felt) 0%, var(--table) 70%);
+    border: 12px solid #5c3a1e;
+    border-radius: 50%;
+    box-shadow: inset 0 0 40px rgba(0,0,0,0.4), 0 10px 30px rgba(0,0,0,0.6);
+  }
+  .community {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -70%);
+    display: flex; gap: 8px;
+    min-height: 90px;
+    align-items: center;
+  }
+  .pot {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, 40px);
+    background: rgba(0,0,0,0.55);
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 1.1rem;
+    color: var(--gold);
+  }
+
+  .seat {
+    position: absolute;
+    width: 130px;
+    text-align: center;
+    transition: opacity 0.2s;
+  }
+  .seat.folded { opacity: 0.45; }
+  .seat .name {
+    font-size: 0.85rem; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .seat .chips { font-size: 0.8rem; color: #aaa; }
+  .seat .bet {
+    font-size: 0.75rem; color: var(--gold);
+    min-height: 1.1em;
+  }
+  .seat .cards {
+    display: flex; justify-content: center; gap: 4px;
+    min-height: 70px; margin: 4px 0;
+  }
+  .seat.active {
+    outline: 2px solid var(--gold);
+    border-radius: 8px;
+    background: rgba(212,175,55,0.12);
+  }
+  .seat.dealer::after {
+    content: "D";
+    position: absolute; top: -8px; right: 4px;
+    background: #fff; color: #111;
+    width: 20px; height: 20px; border-radius: 50%;
+    font-size: 0.7rem; font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  .card {
+    width: 48px; height: 68px;
+    background: #fff; color: #111;
+    border-radius: 5px;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    font-weight: 700; font-size: 1.1rem;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    position: relative;
+  }
+  .card.red { color: #c0392b; }
+  .card.back {
+    background: linear-gradient(135deg, #1a237e, #0d47a1);
+    color: transparent;
+  }
+  .card .suit { font-size: 1.3rem; line-height: 1; }
+
+  .action-bar {
+    margin-top: 12px;
+    display: flex; flex-wrap: wrap; gap: 10px;
+    justify-content: center; align-items: center;
+    max-width: 900px;
+  }
+  .action-bar input[type=range] { width: 160px; }
+  .raise-info { font-size: 0.9rem; color: #ccc; min-width: 80px; }
+
+  .log {
+    margin-top: 16px;
+    width: min(900px, 96vw);
+    max-height: 160px;
+    overflow-y: auto;
+    background: #1a1a1a;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 0.82rem;
+    line-height: 1.4;
+  }
+  .log div { margin-bottom: 2px; }
+
+  .seat[data-pos="0"] { bottom: 10px; left: 50%; transform: translateX(-50%); }
+  .seat[data-pos="1"] { bottom: 60px; left: 12%; }
+  .seat[data-pos="2"] { top: 38%; left: 2%; }
+  .seat[data-pos="3"] { top: 8%; left: 12%; }
+  .seat[data-pos="4"] { top: 4px; left: 50%; transform: translateX(-50%); }
+  .seat[data-pos="5"] { top: 8%; right: 12%; }
+  .seat[data-pos="6"] { top: 38%; right: 2%; }
+  .seat[data-pos="7"] { bottom: 60px; right: 12%; }
+
+  .info-bar {
+    display: flex; gap: 20px; font-size: 0.9rem; color: #bbb;
+    margin-bottom: 6px;
+  }
+</style>
+</head>
+<body>
+  <h1>Texas Hold'em vs AI (최대 8명)</h1>
+
+  <div class="controls">
+    <label>인원
+      <select id="playerCount">
+        <option value="2">2명 (헤드업)</option>
+        <option value="3">3명</option>
+        <option value="4">4명</option>
+        <option value="5">5명</option>
+        <option value="6">6명</option>
+        <option value="7">7명</option>
+        <option value="8" selected>8명</option>
+      </select>
+    </label>
+    <label>AI 난이도
+      <select id="difficulty">
+        <option value="easy">Easy</option>
+        <option value="medium" selected>Medium</option>
+        <option value="hard">Hard</option>
+      </select>
+    </label>
+    <button id="btnNew" class="success">새 게임</button>
+    <button id="btnNext" class="secondary" disabled>다음 핸드</button>
+  </div>
+
+  <div class="info-bar">
+    <span id="blindInfo">블라인드 5 / 10</span>
+    <span id="handInfo"></span>
+  </div>
+
+  <div class="table-wrap">
+    <div class="table"></div>
+    <div class="community" id="community"></div>
+    <div class="pot" id="potDisplay">Pot: 0</div>
+  </div>
+
+  <div class="action-bar" id="actionBar" style="display:none;">
+    <button id="btnFold" class="danger">Fold</button>
+    <button id="btnCheckCall" class="secondary">Check</button>
+    <button id="btnRaise">Raise</button>
+    <input type="range" id="raiseSlider" min="0" max="100" value="20">
+    <span class="raise-info" id="raiseAmount">0</span>
+    <button id="btnAllIn" class="danger">All-in</button>
+  </div>
+
+  <div class="log" id="log"></div>
+
+<script>
+const SUITS = ['♠','♥','♦','♣'];
+const SUIT_CLASS = { '♠':'', '♥':'red', '♦':'red', '♣':'' };
+const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+const RANK_VAL = {};
+RANKS.forEach((r,i)=> RANK_VAL[r]=i);
+
+function makeDeck() {
+  const d = [];
+  for (const s of SUITS) for (const r of RANKS) d.push({r,s});
+  return d;
+}
+function shuffle(arr) {
+  for (let i=arr.length-1;i>0;i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]] = [arr[j],arr[i]];
+  }
+  return arr;
+}
+function cardStr(c) { return c ? c.r + c.s : ''; }
+function cardHTML(c, faceUp=true) {
+  if (!c) return '';
+  if (!faceUp) return `<div class="card back"></div>`;
+  const cls = SUIT_CLASS[c.s] || '';
+  return `<div class="card ${cls}"><div>${c.r}</div><div class="suit">${c.s}</div></div>`;
+}
+
+function evaluateHand(cards) {
+  if (cards.length < 5) return { rank: -1, value: 0, name: 'Incomplete' };
+  let best = null;
+  const combos = cards.length === 5 ? [cards] : getCombos(cards, 5);
+  for (const five of combos) {
+    const ev = evalFive(five);
+    if (!best || compareEval(ev, best) > 0) best = ev;
+  }
+  return best;
+}
+function getCombos(arr, k) {
+  const res = [];
+  function rec(start, path) {
+    if (path.length === k) { res.push([...path]); return; }
+    for (let i=start; i<arr.length; i++) {
+      path.push(arr[i]);
+      rec(i+1, path);
+      path.pop();
+    }
+  }
+  rec(0, []);
+  return res;
+}
+function evalFive(cards) {
+  const vals = cards.map(c => RANK_VAL[c.r]).sort((a,b)=>b-a);
+  const suits = cards.map(c => c.s);
+  const counts = {};
+  vals.forEach(v => counts[v] = (counts[v]||0)+1);
+  const freq = Object.entries(counts).map(([v,c]) => ({v:+v, c})).sort((a,b)=> b.c - a.c || b.v - a.v);
+  const isFlush = suits.every(s => s === suits[0]);
+  let isStraight = false;
+  let topStraight = -1;
+  const uniq = [...new Set(vals)].sort((a,b)=>b-a);
+  if (uniq.length >= 5) {
+    for (let i=0; i<=uniq.length-5; i++) {
+      if (uniq[i] - uniq[i+4] === 4) {
+        isStraight = true; topStraight = uniq[i]; break;
+      }
+    }
+    if (!isStraight && uniq.includes(12) && uniq.includes(0) && uniq.includes(1) && uniq.includes(2) && uniq.includes(3)) {
+      isStraight = true; topStraight = 3;
+    }
+  } else if (uniq.length === 5 && uniq[0]-uniq[4]===4) {
+    isStraight = true; topStraight = uniq[0];
+  }
+
+  let rank, name, kickers;
+  if (isStraight && isFlush) {
+    rank = topStraight === 12 ? 9 : 8;
+    name = rank === 9 ? '로열 플러시' : '스트레이트 플러시';
+    kickers = [topStraight];
+  } else if (freq[0].c === 4) {
+    rank = 7; name = '포카드';
+    kickers = [freq[0].v, freq[1].v];
+  } else if (freq[0].c === 3 && freq[1].c === 2) {
+    rank = 6; name = '풀하우스';
+    kickers = [freq[0].v, freq[1].v];
+  } else if (isFlush) {
+    rank = 5; name = '플러시';
+    kickers = vals;
+  } else if (isStraight) {
+    rank = 4; name = '스트레이트';
+    kickers = [topStraight];
+  } else if (freq[0].c === 3) {
+    rank = 3; name = '트리플';
+    kickers = [freq[0].v, ...freq.slice(1).map(f=>f.v)];
+  } else if (freq[0].c === 2 && freq[1].c === 2) {
+    rank = 2; name = '투페어';
+    const pairs = [freq[0].v, freq[1].v].sort((a,b)=>b-a);
+    kickers = [...pairs, freq[2].v];
+  } else if (freq[0].c === 2) {
+    rank = 1; name = '원페어';
+    kickers = [freq[0].v, ...freq.slice(1).map(f=>f.v)];
+  } else {
+    rank = 0; name = '하이카드';
+    kickers = vals;
+  }
+  let value = rank * 1e10;
+  kickers.forEach((k,i) => value += k * Math.pow(100, 4-i));
+  return { rank, value, name, kickers };
+}
+function compareEval(a, b) {
+  return a.value - b.value;
+}
+
+const SB = 5, BB = 10;
+let state = null;
+
+function createPlayers(n) {
+  const names = ['나','AI-1','AI-2','AI-3','AI-4','AI-5','AI-6','AI-7'];
+  const players = [];
+  for (let i=0; i<n; i++) {
+    players.push({
+      id: i,
+      name: names[i],
+      isHuman: i === 0,
+      chips: 1000,
+      hole: [],
+      bet: 0,
+      totalBet: 0,
+      folded: false,
+      allIn: false,
+      seat: i
+    });
+  }
+  return players;
+}
+
+function newHand() {
+  const n = state.players.length;
+  state.button = (state.button + 1) % n;
+  state.players.forEach(p => {
+    p.hole = [];
+    p.bet = 0;
+    p.totalBet = 0;
+    p.folded = false;
+    p.allIn = false;
+  });
+  state.community = [];
+  state.pot = 0;
+  state.deck = shuffle(makeDeck());
+  state.street = 'preflop';
+  state.currentBet = 0;
+  state.minRaise = BB;
+  state.actionIndex = -1;
+  state.lastAggressor = -1;
+  state.handOver = false;
+  state.winners = [];
+
+  const sbPos = (state.button + 1) % n;
+  const bbPos = (state.button + 2) % n;
+  postBlind(state.players[sbPos], SB);
+  postBlind(state.players[bbPos], BB);
+  state.currentBet = BB;
+  state.minRaise = BB;
+
+  for (let i=0; i<2; i++) {
+    for (const p of state.players) {
+      if (p.chips > 0 || p.totalBet > 0) p.hole.push(state.deck.pop());
+    }
+  }
+
+  state.actionIndex = (bbPos + 1) % n;
+  skipFoldedOrAllIn();
+  log(`--- 새 핸드 (버튼: ${state.players[state.button].name}) ---`);
+  updateUI();
+  maybeAIAct();
+}
+
+function postBlind(p, amount) {
+  const pay = Math.min(amount, p.chips);
+  p.chips -= pay;
+  p.bet += pay;
+  p.totalBet += pay;
+  state.pot += pay;
+  if (p.chips === 0) p.allIn = true;
+}
+
+function skipFoldedOrAllIn() {
+  const n = state.players.length;
+  let guard = 0;
+  while (guard < n) {
+    const p = state.players[state.actionIndex];
+    if (!p.folded && !p.allIn && p.chips > 0) return;
+    state.actionIndex = (state.actionIndex + 1) % n;
+    guard++;
+  }
+}
+
+function activePlayers() {
+  return state.players.filter(p => !p.folded);
+}
+function canActPlayers() {
+  return state.players.filter(p => !p.folded && !p.allIn && p.chips > 0);
+}
+
+function playerAct(pid, action, raiseTo = 0) {
+  if (state.handOver) return;
+  const p = state.players[pid];
+  if (p.folded || p.allIn) return;
+  if (pid !== state.actionIndex) return;
+
+  const toCall = state.currentBet - p.bet;
+
+  if (action === 'fold') {
+    p.folded = true;
+    log(`${p.name} 폴드`);
+  } else if (action === 'check' || action === 'call') {
+    if (toCall === 0) {
+      log(`${p.name} 체크`);
+    } else {
+      const pay = Math.min(toCall, p.chips);
+      p.chips -= pay;
+      p.bet += pay;
+      p.totalBet += pay;
+      state.pot += pay;
+      if (p.chips === 0) p.allIn = true;
+      log(`${p.name} 콜 ${pay}`);
+    }
+  } else if (action === 'raise' || action === 'allin') {
+    let target = action === 'allin' ? p.bet + p.chips : raiseTo;
+    target = Math.max(target, state.currentBet + state.minRaise);
+    target = Math.min(target, p.bet + p.chips);
+    const pay = target - p.bet;
+    if (pay <= 0) return;
+    p.chips -= pay;
+    p.bet += pay;
+    p.totalBet += pay;
+    state.pot += pay;
+    const raisedBy = p.bet - state.currentBet;
+    if (p.bet > state.currentBet) {
+      state.minRaise = Math.max(state.minRaise, raisedBy);
+      state.currentBet = p.bet;
+      state.lastAggressor = pid;
+    }
+    if (p.chips === 0) p.allIn = true;
+    log(`${p.name} ${p.allIn ? '올인' : '레이즈'} → ${p.bet}`);
+  }
+
+  state.actionIndex = (state.actionIndex + 1) % state.players.length;
+  skipFoldedOrAllIn();
+
+  if (isRoundComplete()) {
+    nextStreet();
+  } else {
+    updateUI();
+    maybeAIAct();
+  }
+}
+
+function isRoundComplete() {
+  const actors = canActPlayers();
+  if (actors.length === 0) return true;
+  return actors.every(p => p.bet === state.currentBet);
+}
+
+function nextStreet() {
+  state.players.forEach(p => { p.bet = 0; });
+  state.currentBet = 0;
+  state.minRaise = BB;
+  state.lastAggressor = -1;
+
+  const alive = activePlayers();
+  if (alive.length === 1) {
+    endHand(alive[0]);
+    return;
+  }
+
+  if (state.street === 'preflop') {
+    state.street = 'flop';
+    state.community.push(state.deck.pop(), state.deck.pop(), state.deck.pop());
+    log('=== 플랍 === ' + state.community.map(cardStr).join(' '));
+  } else if (state.street === 'flop') {
+    state.street = 'turn';
+    state.community.push(state.deck.pop());
+    log('=== 턴 === ' + cardStr(state.community[3]));
+  } else if (state.street === 'turn') {
+    state.street = 'river';
+    state.community.push(state.deck.pop());
+    log('=== 리버 === ' + cardStr(state.community[4]));
+  } else if (state.street === 'river') {
+    showdown();
+    return;
+  }
+
+  state.actionIndex = (state.button + 1) % state.players.length;
+  skipFoldedOrAllIn();
+  updateUI();
+  maybeAIAct();
+}
+
+function showdown() {
+  const contenders = activePlayers();
+  const evals = contenders.map(p => {
+    const all = [...p.hole, ...state.community];
+    const ev = evaluateHand(all);
+    return { p, ev };
+  });
+  evals.sort((a,b) => compareEval(b.ev, a.ev));
+  const bestVal = evals[0].ev.value;
+  const winners = evals.filter(e => e.ev.value === bestVal).map(e => e.p);
+
+  const share = Math.floor(state.pot / winners.length);
+  winners.forEach(w => {
+    w.chips += share;
+    log(`${w.name} 승리! ${evals.find(e=>e.p===w).ev.name} (+${share})`);
+  });
+  state.pot = 0;
+  state.handOver = true;
+  state.winners = winners;
+  updateUI(true);
+  document.getElementById('btnNext').disabled = false;
+  document.getElementById('actionBar').style.display = 'none';
+}
+
+function endHand(winner) {
+  winner.chips += state.pot;
+  log(`${winner.name} 승리 (모두 폴드) +${state.pot}`);
+  state.pot = 0;
+  state.handOver = true;
+  state.winners = [winner];
+  updateUI(true);
+  document.getElementById('btnNext').disabled = false;
+  document.getElementById('actionBar').style.display = 'none';
+}
+
+function maybeAIAct() {
+  if (state.handOver) return;
+  const p = state.players[state.actionIndex];
+  if (!p || p.isHuman || p.folded || p.allIn) return;
+
+  setTimeout(() => {
+    if (state.handOver) return;
+    const decision = aiDecide(p);
+    playerAct(p.id, decision.action, decision.raiseTo);
+  }, 450 + Math.random()*400);
+}
+
+function aiDecide(p) {
+  const diff = state.difficulty;
+  const toCall = state.currentBet - p.bet;
+  const pot = state.pot;
+  const stack = p.chips;
+  const potOdds = toCall / (pot + toCall + 0.01);
+
+  let strength = 0;
+  if (state.street === 'preflop') {
+    strength = preflopStrength(p.hole);
+  } else {
+    const ev = evaluateHand([...p.hole, ...state.community]);
+    strength = (ev.rank + 1) / 10;
+  }
+
+  let foldThresh, raiseThresh, bluffChance;
+  if (diff === 'easy') {
+    foldThresh = 0.25; raiseThresh = 0.65; bluffChance = 0.08;
+  } else if (diff === 'medium') {
+    foldThresh = 0.35; raiseThresh = 0.55; bluffChance = 0.15;
+  } else {
+    foldThresh = 0.42; raiseThresh = 0.48; bluffChance = 0.22;
+  }
+
+  const noise = (Math.random() - 0.5) * (diff === 'easy' ? 0.25 : diff === 'medium' ? 0.12 : 0.06);
+  strength += noise;
+
+  if (toCall === 0) {
+    if (strength > raiseThresh || Math.random() < bluffChance * 0.7) {
+      const raiseSize = Math.min(stack, Math.floor(pot * (0.5 + Math.random()*0.7)));
+      return { action: 'raise', raiseTo: p.bet + Math.max(state.minRaise, raiseSize) };
+    }
+    return { action: 'check' };
+  }
+
+  if (strength < foldThresh && Math.random() > bluffChance) {
+    return { action: 'fold' };
+  }
+  if (strength > raiseThresh + 0.1 || (strength > 0.5 && Math.random() < bluffChance)) {
+    const raiseSize = Math.min(stack, Math.floor((toCall + pot) * (0.6 + Math.random()*0.8)));
+    return { action: 'raise', raiseTo: p.bet + toCall + Math.max(state.minRaise, raiseSize) };
+  }
+  if (strength > potOdds * 0.9 || strength > 0.38) {
+    return { action: 'call' };
+  }
+  return { action: 'fold' };
+}
+
+function preflopStrength(hole) {
+  const v1 = RANK_VAL[hole[0].r], v2 = RANK_VAL[hole[1].r];
+  const high = Math.max(v1,v2), low = Math.min(v1,v2);
+  let score = high;
+  if (v1 === v2) score *= 1.8;
+  else {
+    if (hole[0].s === hole[1].s) score += 2;
+    const gap = high - low;
+    if (gap === 1) score += 1;
+    else if (gap === 2) score += 0.5;
+    else if (gap > 3) score -= gap * 0.4;
+  }
+  return Math.min(1, Math.max(0, (score - 4) / 20));
+}
+
+function log(msg) {
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  div.textContent = msg;
+  el.prepend(div);
+}
+
+function updateUI(revealAll = false) {
+  const wrap = document.querySelector('.table-wrap');
+  wrap.querySelectorAll('.seat').forEach(s => s.remove());
+
+  state.players.forEach((p) => {
+    const seat = document.createElement('div');
+    seat.className = 'seat';
+    seat.dataset.pos = p.seat;
+    if (p.folded) seat.classList.add('folded');
+    if (p.id === state.actionIndex && !state.handOver) seat.classList.add('active');
+    if (p.id === state.button) seat.classList.add('dealer');
+
+    const showCards = p.isHuman || revealAll || state.handOver;
+    seat.innerHTML = `
+      <div class="name">${p.name}${p.allIn ? ' (올인)' : ''}</div>
+      <div class="chips">${p.chips} 칩</div>
+      <div class="cards">${p.hole.map(c => cardHTML(c, showCards)).join('')}</div>
+      <div class="bet">${p.bet > 0 ? '베팅 ' + p.bet : ''}</div>
+    `;
+    wrap.appendChild(seat);
+  });
+
+  document.getElementById('community').innerHTML =
+    state.community.map(c => cardHTML(c, true)).join('');
+
+  document.getElementById('potDisplay').textContent = `Pot: ${state.pot}`;
+  document.getElementById('handInfo').textContent =
+    state.handOver ? '핸드 종료' : `스트리트: ${state.street}`;
+
+  const bar = document.getElementById('actionBar');
+  const human = state.players[0];
+  if (!state.handOver && state.actionIndex === 0 && !human.folded && !human.allIn) {
+    bar.style.display = 'flex';
+    const toCall = state.currentBet - human.bet;
+    const btnCC = document.getElementById('btnCheckCall');
+    btnCC.textContent = toCall === 0 ? 'Check' : `Call ${toCall}`;
+    const minR = state.currentBet + state.minRaise;
+    const maxR = human.bet + human.chips;
+    const slider = document.getElementById('raiseSlider');
+    slider.min = minR;
+    slider.max = maxR;
+    slider.value = Math.min(maxR, Math.max(minR, state.currentBet * 2.5 || minR));
+    document.getElementById('raiseAmount').textContent = slider.value;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+document.getElementById('btnNew').onclick = () => {
+  const n = +document.getElementById('playerCount').value;
+  const diff = document.getElementById('difficulty').value;
+  state = {
+    players: createPlayers(n),
+    button: n - 1,
+    difficulty: diff,
+    pot: 0,
+    community: [],
+    street: 'preflop',
+    deck: [],
+    currentBet: 0,
+    minRaise: BB,
+    actionIndex: 0,
+    handOver: false
+  };
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('btnNext').disabled = true;
+  newHand();
+};
+
+document.getElementById('btnNext').onclick = () => {
+  state.players = state.players.filter(p => p.chips > 0 || p.isHuman);
+  if (state.players.length < 2) {
+    log('게임 종료 – 칩이 부족합니다.');
+    return;
+  }
+  state.players.forEach((p,i) => { p.id = i; p.seat = i; });
+  document.getElementById('btnNext').disabled = true;
+  newHand();
+};
+
+document.getElementById('btnFold').onclick = () => playerAct(0, 'fold');
+document.getElementById('btnCheckCall').onclick = () => {
+  const toCall = state.currentBet - state.players[0].bet;
+  playerAct(0, toCall === 0 ? 'check' : 'call');
+};
+document.getElementById('btnRaise').onclick = () => {
+  const val = +document.getElementById('raiseSlider').value;
+  playerAct(0, 'raise', val);
+};
+document.getElementById('btnAllIn').onclick = () => playerAct(0, 'allin');
+document.getElementById('raiseSlider').oninput = (e) => {
+  document.getElementById('raiseAmount').textContent = e.target.value;
+};
+
+document.getElementById('btnNew').click();
+</script>
+</body>
+</html>
