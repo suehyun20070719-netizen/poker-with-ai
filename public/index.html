@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Texas Hold'em Online vs AI (Full FX)</title>
+<script src="/socket.io/socket.io.js"></script>
+<style>
+  :root {
+    --bg: #0f0f0f;
+    --felt: #0d5c3a;
+    --felt-dark: #084229;
+    --gold: #e8c547;
+    --red: #e74c3c;
+    --blue: #3498db;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: #eee;
+    min-height: 100vh;
+    padding: 8px;
+    padding-bottom: 130px;
+    overflow-x: hidden;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.15rem;
+    color: var(--gold);
+    margin: 4px 0 10px;
+  }
+
+  /* ===== LOBBY UI ===== */
+  .lobby-panel {
+    max-width: 420px;
+    margin: 20px auto;
+    background: #1e1e1e;
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid #333;
+    text-align: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+  }
+  .lobby-panel input, .lobby-panel select {
+    width: 100%;
+    padding: 12px;
+    margin: 8px 0;
+    border-radius: 8px;
+    border: 1px solid #444;
+    background: #2a2a2a;
+    color: #fff;
+    font-size: 0.95rem;
+    box-sizing: border-box;
+  }
+  .lobby-panel label {
+    display: block;
+    text-align: left;
+    font-size: 0.85rem;
+    color: #aaa;
+    margin-top: 6px;
+  }
+  .lobby-btns {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .lobby-btns button {
+    flex: 1;
+    padding: 12px;
+    font-size: 0.95rem;
+  }
+
+  /* ===== GAME INTERFACE ===== */
+  #gameInterface { display: none; }
+
+  .top-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  select, button {
+    padding: 7px 12px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.88rem;
+    cursor: pointer;
+  }
+  select { background: #222; color: #fff; }
+  button {
+    background: var(--gold);
+    color: #111;
+    font-weight: 700;
+  }
+  button:active { transform: scale(0.97); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.secondary { background: #333; color: #ddd; }
+  button.danger { background: var(--red); color: #fff; }
+  button.success { background: #27ae60; color: #fff; }
+  button.blue { background: var(--blue); color: #fff; }
+
+  .info {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #999;
+    margin-bottom: 6px;
+  }
+
+  /* ===== TABLE ===== */
+  .table-area {
+    position: relative;
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+    background: radial-gradient(ellipse at center, var(--felt) 0%, var(--felt-dark) 75%);
+    border: 10px solid #5a3a1c;
+    border-radius: 50% / 42%;
+    aspect-ratio: 1 / 1.15;
+    box-shadow: inset 0 0 50px rgba(0,0,0,0.45);
+    overflow: hidden;
+  }
+
+  /* Center Area */
+  .center {
+    position: absolute;
+    top: 42%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    z-index: 5;
+  }
+  .community {
+    display: flex;
+    gap: 4px;
+    justify-content: center;
+    min-height: 62px;
+    margin-bottom: 6px;
+  }
+  .pot-box {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .pot {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(0,0,0,0.75);
+    color: var(--gold);
+    font-weight: 800;
+    font-size: 0.95rem;
+    padding: 4px 14px;
+    border-radius: 20px;
+    border: 1px solid rgba(232,197,71,0.3);
+  }
+  
+  /* Chip UI & Animations */
+  .chip-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px dashed #fff;
+    display: inline-block;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    background: radial-gradient(circle, #f1c40f 40%, #b7950b 90%);
+  }
+  .chip-stack {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 16px;
+    margin-top: -2px;
+  }
+  .chip-stack .chip-icon { margin-left: -12px; }
+  .chip-stack .chip-icon:first-child { margin-left: 0; }
+
+  /* Dynamic Animated Chip */
+  .flying-chip {
+    position: absolute;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px dashed #fff;
+    background: radial-gradient(circle, #e74c3c 40%, #922b21 90%);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.6);
+    z-index: 100;
+    pointer-events: none;
+    transition: all 0.45s cubic-bezier(0.25, 1, 0.5, 1);
+  }
+
+  /* Seats */
+  .seat {
+    position: absolute;
+    width: 92px;
+    text-align: center;
+    z-index: 2;
+  }
+  .seat .name {
+    font-size: 0.72rem;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90px;
+  }
+  .seat .chips { font-size: 0.68rem; color: #bbb; }
+  .seat .bet-amount {
+    font-size: 0.65rem;
+    color: var(--gold);
+    min-height: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  .seat .cards {
+    display: flex;
+    justify-content: center;
+    gap: 2px;
+    margin: 2px 0;
+    min-height: 48px;
+  }
+  .seat.folded { opacity: 0.4; }
+  .seat.active {
+    background: rgba(232,197,71,0.18);
+    border-radius: 10px;
+    outline: 2px solid var(--gold);
+  }
+  .seat.dealer .name::after {
+    content: " D";
+    color: #fff;
+    background: #555;
+    border-radius: 4px;
+    padding: 0 3px;
+    font-size: 0.6rem;
+  }
+
+  .seat[data-i="0"] { bottom: 6px; left: 50%; transform: translateX(-50%); }
+  .seat[data-i="1"] { bottom: 18%; left: 3%; }
+  .seat[data-i="2"] { top: 32%; left: 1%; }
+  .seat[data-i="3"] { top: 6%; left: 12%; }
+  .seat[data-i="4"] { top: 2px; left: 50%; transform: translateX(-50%); }
+  .seat[data-i="5"] { top: 6%; right: 12%; }
+  .seat[data-i="6"] { top: 32%; right: 1%; }
+  .seat[data-i="7"] { bottom: 18%; right: 3%; }
+
+  /* Card */
+  .card {
+    width: 34px;
+    height: 48px;
+    background: #fff;
+    color: #111;
+    border-radius: 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.85rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+    line-height: 1.05;
+  }
+  .card.red { color: #c0392b; }
+  .card.back {
+    background: linear-gradient(145deg, #1a237e, #0d47a1);
+    color: transparent;
+  }
+  .card .suit { font-size: 0.95rem; }
+
+  /* Action bar */
+  .action-bar {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #1a1a1a;
+    border-top: 1px solid #333;
+    padding: 10px 8px 16px;
+    display: none;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
+    z-index: 50;
+  }
+  .action-bar.show { display: flex; }
+  .action-bar button { min-width: 70px; padding: 10px 14px; font-size: 0.9rem; }
+  .raise-wrap { display: flex; align-items: center; gap: 6px; }
+  .raise-wrap input[type=range] { width: 110px; }
+  .raise-val { font-size: 0.85rem; color: #ccc; min-width: 36px; }
+
+  /* Log */
+  .log {
+    max-width: 420px;
+    margin: 12px auto 0;
+    max-height: 130px;
+    overflow-y: auto;
+    background: #181818;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 0.75rem;
+    line-height: 1.35;
+    color: #bbb;
+  }
+  .log div { margin-bottom: 2px; border-bottom: 1px solid #222; padding-bottom: 1px; }
+</style>
+</head>
+<body>
+  <h1>Texas Hold'em vs AI & Online</h1>
+
+  <!-- 로비 화면 -->
+  <div class="lobby-panel" id="lobbyPanel">
+    <h3 style="margin-bottom:12px; color:var(--gold);">게임 로비</h3>
+    <input type="text" id="playerName" placeholder="닉네임을 입력하세요" value="나">
+    
+    <label>AI 대전 모드 설정</label>
+    <select id="playerCount">
+      <option value="2">2인 (나 + AI 1)</option>
+      <option value="4">4인 (나 + AI 3)</option>
+      <option value="6">6인 (나 + AI 5)</option>
+      <option value="8" selected>8인 (나 + AI 7)</option>
+    </select>
+    
+    <select id="difficulty">
+      <option value="easy">Easy AI</option>
+      <option value="medium" selected>Medium AI</option>
+      <option value="hard">Hard AI</option>
+    </select>
+
+    <div class="lobby-btns">
+      <button class="success" onclick="startSingleGame()">AI 혼자하기</button>
+    </div>
+    
+    <hr style="border: 0.5px solid #333; margin: 15px 0;">
+    
+    <input type="text" id="roomCode" placeholder="온라인 멀티 방 코드 (예: 1234)">
+    <div class="lobby-btns">
+      <button class="blue" onclick="createOnlineRoom()">멀티 방 만들기</button>
+      <button class="secondary" onclick="joinOnlineRoom()">멀티 방 들어가기</button>
+    </div>
+  </div>
+
+  <!-- 포커 게임 인터페이스 -->
+  <div id="gameInterface">
+    <div class="top-bar">
+      <button id="btnNew" class="success">새 게임</button>
+      <button id="btnNext" class="secondary" disabled>다음 핸드</button>
+    </div>
+
+    <div class="info">
+      <span id="blindInfo">블라인드 5/10</span> · 
+      <span id="streetInfo">-</span>
+    </div>
+
+    <div class="table-area" id="table">
+      <div class="center" id="centerPotArea">
+        <div class="community" id="community"></div>
+        <div class="pot-box">
+          <div class="pot">
+            <span class="chip-icon"></span>
+            <span id="potDisplay">Pot 0</span>
+          </div>
+          <div class="chip-stack" id="chipStack"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="action-bar" id="actionBar">
+      <button id="btnFold" class="danger">폴드</button>
+      <button id="btnCheckCall" class="secondary">체크</button>
+      <div class="raise-wrap">
+        <button id="btnRaise" class="blue">레이즈</button>
+        <input type="range" id="raiseSlider" min="20" max="1000" value="40">
+        <span class="raise-val" id="raiseVal">40</span>
+      </div>
+      <button id="btnAllIn" class="danger">올인</button>
+    </div>
+  </div>
+
+  <div class="log" id="log"></div>
+
+<script>
+const SUITS = ['♠','♥','♦','♣'];
+const RED = new Set(['♥','♦']);
+const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+const RANK_VAL = Object.fromEntries(RANKS.map((r,i)=>[r,i]));
+const SB = 5, BB = 10;
+let G = null;
+let socket = null;
+let isOnline = false;
+
+function makeDeck() {
+  const d = [];
+  for (const s of SUITS) for (const r of RANKS) d.push({r,s});
+  return d;
+}
+function shuffle(a) {
+  for (let i=a.length-1;i>0;i--) {
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]]=[a[j],a[i]];
+  }
+  return a;
+}
+function cardHTML(c, up=true) {
+  if (!c) return '';
+  if (!up) return `<div class="card back"></div>`;
+  const cls = RED.has(c.s) ? 'red' : '';
+  return `<div class="card ${cls}"><div>${c.r}</div><div class="suit">${c.s}</div></div>`;
+}
+function log(msg) {
+  const el = document.getElementById('log');
+  const d = document.createElement('div');
+  d.textContent = msg;
+  el.prepend(d);
+}
+
+function animateBetChip(fromSeatId) {
+  const seatEl = document.querySelector(`.seat[data-i="${fromSeatId}"]`);
+  const potEl = document.getElementById('centerPotArea');
+  if (!seatEl || !potEl) return;
+
+  const sRect = seatEl.getBoundingClientRect();
+  const pRect = potEl.getBoundingClientRect();
+  const tableRect = document.getElementById('table').getBoundingClientRect();
+
+  const chip = document.createElement('div');
+  chip.className = 'flying-chip';
+  chip.style.left = (sRect.left - tableRect.left + 35) + 'px';
+  chip.style.top = (sRect.top - tableRect.top + 20) + 'px';
+  document.getElementById('table').appendChild(chip);
+
+  requestAnimationFrame(() => {
+    chip.style.left = (pRect.left - tableRect.left + pRect.width/2 - 11) + 'px';
+    chip.style.top = (pRect.top - tableRect.top + pRect.height/2 - 11) + 'px';
+    chip.style.opacity = '0.5';
+  });
+
+  setTimeout(() => chip.remove(), 450);
+}
+
+/* ===== 족보 평가 엔진 ===== */
+function evaluate(cards) {
+  if (cards.length < 5) return {rank:-1, value:0, name:'-'};
+  const combos = cards.length===5 ? [cards] : combinations(cards,5);
+  let best = null;
+  for (const five of combos) {
+    const e = eval5(five);
+    if (!best || e.value > best.value) best = e;
+  }
+  return best;
+}
+function combinations(arr, k) {
+  const res = [];
+  (function rec(start, path) {
+    if (path.length===k) { res.push([...path]); return; }
+    for (let i=start;i<arr.length;i++) {
+      path.push(arr[i]); rec(i+1,path); path.pop();
+    }
+  })(0,[]);
+  return res;
+}
+function eval5(cards) {
+  const vals = cards.map(c=>RANK_VAL[c.r]).sort((a,b)=>b-a);
+  const suits = cards.map(c=>c.s);
+  const cnt = {};
+  vals.forEach(v => cnt[v]=(cnt[v]||0)+1);
+  const freq = Object.entries(cnt).map(([v,c])=>({v:+v,c})).sort((a,b)=>b.c-a.c||b.v-a.v);
+  const flush = suits.every(s=>s===suits[0]);
+  let straight=false, topS=-1;
+  const uniq=[...new Set(vals)].sort((a,b)=>b-a);
+  for (let i=0;i<=uniq.length-5;i++) {
+    if (uniq[i]-uniq[i+4]===4) { straight=true; topS=uniq[i]; break; }
+  }
+  if (!straight && uniq.includes(12)&&uniq.includes(0)&&uniq.includes(1)&&uniq.includes(2)&&uniq.includes(3)) {
+    straight=true; topS=3;
+  }
+  let rank, name, kickers;
+  if (straight && flush) {
+    rank = topS===12 ? 9 : 8; name = rank===9 ? '로열플러시' : '스티플'; kickers=[topS];
+  } else if (freq[0].c===4) {
+    rank=7; name='포카드'; kickers=[freq[0].v,freq[1].v];
+  } else if (freq[0].c===3 && freq[1].c===2) {
+    rank=6; name='풀하우스'; kickers=[freq[0].v,freq[1].v];
+  } else if (flush) {
+    rank=5; name='플러시'; kickers=vals;
+  } else if (straight) {
+    rank=4; name='스트레이트'; kickers=[topS];
+  } else if (freq[0].c===3) {
+    rank=3; name='트리플'; kickers=[freq[0].v,...freq.slice(1).map(f=>f.v)];
+  } else if (freq[0].c===2 && freq[1].c===2) {
+    rank=2; name='투페어';
+    const ps=[freq[0].v,freq[1].v].sort((a,b)=>b-a);
+    kickers=[...ps,freq[2].v];
+  } else if (freq[0].c===2) {
+    rank=1; name='원페어'; kickers=[freq[0].v,...freq.slice(1).map(f=>f.v)];
+  } else {
+    rank=0; name='하이카드'; kickers=vals;
+  }
+  let value = rank * 1e12;
+  kickers.forEach((k,i)=> value += k * Math.pow(100,5-i));
+  return {rank,value,name,kickers};
+}
+
+/* ===== 싱글플레이어 AI 모드 엔진 ===== */
+function createPlayers(n, myName) {
+  const names = [myName || '나','AI-1','AI-2','AI-3','AI-4','AI-5','AI-6','AI-7'];
+  return Array.from({length:n}, (_,i)=>({
+    id:i, name:names[i], human:i===0,
+    chips:1000, hole:[], bet:0, total:0,
+    folded:false, allIn:false, acted:false
+  }));
+}
+
+function startHand() {
+  const n = G.players.length;
+  G.button = (G.button + 1) % n;
+  G.players.forEach(p=>{
+    p.hole=[]; p.bet=0; p.total=0;
+    p.folded=false; p.allIn=false; p.acted=false;
+  });
+  G.community=[]; G.pot=0; G.deck=shuffle(makeDeck());
+  G.street='preflop'; G.currentBet=0; G.minRaise=BB; G.handOver=false;
+
+  const sb = (G.button+1)%n;
+  const bb = (G.button+2)%n;
+  post(G.players[sb], SB);
+  post(G.players[bb], BB);
+  G.currentBet = BB;
+
+  for (let r=0;r<2;r++) {
+    for (const p of G.players) {
+      if (p.chips>0 || p.total>0) p.hole.push(G.deck.pop());
+    }
+  }
+
+  G.toAct = (bb+1)%n;
+  skipInvalid();
+  log(`—— 새 핸드 (딜러버튼: ${G.players[G.button].name}) ——`);
+  render();
+  scheduleAI();
+}
+
+function post(p, amt) {
+  const pay = Math.min(amt, p.chips);
+  p.chips -= pay; p.bet += pay; p.total += pay; G.pot += pay;
+  if (p.chips===0) p.allIn=true;
+  if (pay>0) animateBetChip(p.id);
+}
+
+function skipInvalid() {
+  let guard=0;
+  while (guard < G.players.length) {
+    const p = G.players[G.toAct];
+    if (!p.folded && !p.allIn && p.chips>0) return;
+    G.toAct = (G.toAct+1)%G.players.length;
+    guard++;
+  }
+}
+
+function living() { return G.players.filter(p=>!p.folded); }
+function canAct() { return G.players.filter(p=>!p.folded && !p.allIn && p.chips>0); }
+
+function doAction(pid, type, raiseTo=0) {
+  if (G.handOver) return;
+  const p = G.players[pid];
+  if (pid !== G.toAct || p.folded || p.allIn) return;
+
+  const toCall = G.currentBet - p.bet;
+
+  if (type==='fold') {
+    p.folded=true;
+    log(`${p.name} 폴드`);
+  } else if (type==='check' || type==='call') {
+    if (toCall===0) {
+      log(`${p.name} 체크`);
+    } else {
+      const pay = Math.min(toCall, p.chips);
+      p.chips-=pay; p.bet+=pay; p.total+=pay; G.pot+=pay;
+      if (p.chips===0) p.allIn=true;
+      log(`${p.name} 콜 ${pay}`);
+      animateBetChip(p.id);
+    }
+  } else if (type==='raise' || type==='allin') {
+    let target = (type==='allin') ? p.bet + p.chips : raiseTo;
+    target = Math.max(target, G.currentBet + G.minRaise);
+    target = Math.min(target, p.bet + p.chips);
+    const pay = target - p.bet;
+    if (pay<=0 && type!=='allin') return;
+    p.chips-=pay; p.bet+=pay; p.total+=pay; G.pot+=pay;
+    if (p.bet > G.currentBet) {
+      G.minRaise = Math.max(G.minRaise, p.bet - G.currentBet);
+      G.currentBet = p.bet;
+      G.players.forEach(x=>{ if (x!==p && !x.folded && !x.allIn) x.acted=false; });
+    }
+    if (p.chips===0) p.allIn=true;
+    log(`${p.name} ${p.allIn?'올인':'레이즈'} → ${p.bet}`);
+    animateBetChip(p.id);
+  }
+
+  p.acted = true;
+  G.toAct = (G.toAct+1)%G.players.length;
+  skipInvalid();
+
+  if (roundDone()) advanceStreet();
+  else { render(); scheduleAI(); }
+}
+
+function roundDone() {
+  const actors = canAct();
+  if (actors.length===0) return true;
+  return actors.every(p => p.bet===G.currentBet && p.acted);
+}
+
+function advanceStreet() {
+  G.players.forEach(p=>{ p.bet=0; p.acted=false; });
+  G.currentBet=0; G.minRaise=BB;
+
+  const alive = living();
+  if (alive.length<=1) { finish(alive[0] || null); return; }
+
+  if (canAct().length===0) {
+    while (G.community.length<5) G.community.push(G.deck.pop());
+    G.street='river';
+    showdown();
+    return;
+  }
+
+  if (G.street==='preflop') {
+    G.street='flop';
+    G.community.push(G.deck.pop(),G.deck.pop(),G.deck.pop());
+    log('▶ 플랍 ' + G.community.map(c=>c.r+c.s).join(' '));
+  } else if (G.street==='flop') {
+    G.street='turn';
+    G.community.push(G.deck.pop());
+    log('▶ 턴 ' + G.community[3].r+G.community[3].s);
+  } else if (G.street==='turn') {
+    G.street='river';
+    G.community.push(G.deck.pop());
+    log('▶ 리버 ' + G.community[4].r+G.community[4].s);
+  } else {
+    showdown();
+    return;
+  }
+
+  G.toAct = (G.button+1)%G.players.length;
+  skipInvalid();
+  render();
+  scheduleAI();
+}
+
+function resolveSidePots() {
+  let contributions = G.players.map(p => ({ p, total: p.total })).filter(x => x.total > 0);
+  contributions.sort((a, b) => a.total - b.total);
+  let pots = [], prevLevel = 0;
+  let levels = [...new Set(contributions.map(c => c.total))];
+
+  for (let level of levels) {
+    let diff = level - prevLevel, potAmount = 0, eligible = [];
+    G.players.forEach(p => {
+      if (p.total >= level) {
+        potAmount += diff;
+        if (!p.folded) eligible.push(p);
+      } else if (p.total > prevLevel) {
+        potAmount += (p.total - prevLevel);
+        if (!p.folded) eligible.push(p);
+      }
+    });
+    if (potAmount > 0) pots.push({ amount: potAmount, eligible });
+    prevLevel = level;
+  }
+  return pots;
+}
+
+function showdown() {
+  const pots = resolveSidePots();
+  pots.forEach((potObj) => {
+    if (potObj.eligible.length === 0) return;
+    const scored = potObj.eligible.map(p => ({ p, e: evaluate([...p.hole, ...G.community]) }));
+    scored.sort((a,b)=>b.e.value-a.e.value);
+    const best = scored[0].e.value;
+    const winners = scored.filter(s=>s.e.value===best).map(s=>s.p);
+    const share = Math.floor(potObj.amount / winners.length);
+
+    winners.forEach(w=>{
+      w.chips += share;
+      const nm = scored.find(s=>s.p===w).e.name;
+      log(`★ ${w.name} 승리! ${nm} (+${share})`);
+    });
+  });
+
+  G.pot = 0;
+  G.handOver = true;
+  render(true);
+  document.getElementById('btnNext').disabled = false;
+  document.getElementById('actionBar').classList.remove('show');
+}
+
+function finish(winner) {
+  if (winner) {
+    winner.chips += G.pot;
+    log(`★ ${winner.name} 승리 (나머지 폴드) +${G.pot}`);
+  }
+  G.pot = 0;
+  G.handOver = true;
+  render(true);
+  document.getElementById('btnNext').disabled = false;
+  document.getElementById('actionBar').classList.remove('show');
+}
+
+/* ===== AI 인공지능 사고 로직 ===== */
+function scheduleAI() {
+  if (G.handOver || isOnline) return;
+  const p = G.players[G.toAct];
+  if (!p || p.human || p.folded || p.allIn) return;
+  setTimeout(()=>{
+    if (G.handOver) return;
+    const d = aiThink(p);
+    doAction(p.id, d.type, d.raiseTo);
+  }, 400 + Math.random()*300);
+}
+
+function aiThink(p) {
+  const diff = G.difficulty;
+  const toCall = G.currentBet - p.bet;
+  const pot = G.pot;
+  let str = (G.street==='preflop') ? preStr(p.hole) : (evaluate([...p.hole,...G.community]).rank+1)/10;
+  
+  let foldT = diff==='easy'?0.25:diff==='medium'?0.35:0.42;
+  let raiseT = diff==='easy'?0.70:diff==='medium'?0.55:0.48;
+
+  if (toCall===0) {
+    if (str>raiseT) return {type:'raise', raiseTo: p.bet + Math.max(G.minRaise, Math.floor(pot*0.5))};
+    return {type:'check'};
+  }
+  if (str < foldT) return {type:'fold'};
+  if (str > raiseT) return {type:'raise', raiseTo: p.bet + toCall + Math.max(G.minRaise, Math.floor((pot+toCall)*0.5))};
+  return {type:'call'};
+}
+
+function preStr(hole) {
+  const v1=RANK_VAL[hole[0].r], v2=RANK_VAL[hole[1].r];
+  let s=Math.max(v1,v2);
+  if (v1===v2) s*=1.9;
+  return Math.min(1, Math.max(0,(s-3.5)/18));
+}
+
+function render(reveal=false) {
+  const table = document.getElementById('table');
+  table.querySelectorAll('.seat').forEach(s=>s.remove());
+
+  G.players.forEach((p,i)=>{
+    const seat = document.createElement('div');
+    seat.className = 'seat';
+    seat.dataset.i = i;
+    if (p.folded) seat.classList.add('folded');
+    if (!G.handOver && G.toAct===p.id) seat.classList.add('active');
+    if (p.id===G.button) seat.classList.add('dealer');
+
+    const show = p.human || reveal || G.handOver;
+    seat.innerHTML = `
+      <div class="name">${p.name}${p.allIn?' (올인)':''}</div>
+      <div class="chips">${p.chips}</div>
+      <div class="cards">${p.hole.map(c=>cardHTML(c,show)).join('')}</div>
+      <div class="bet-amount">${p.bet>0?`<span class="chip-icon" style="width:12px;height:12px;"></span>${p.bet}`:''}</div>
+    `;
+    table.appendChild(seat);
+  });
+
+  document.getElementById('community').innerHTML = G.community.map(c=>cardHTML(c,true)).join('');
+  document.getElementById('potDisplay').textContent = `Pot ${G.pot}`;
+  document.getElementById('streetInfo').textContent = G.handOver ? '핸드 종료' : G.street;
+
+  const chipStackEl = document.getElementById('chipStack');
+  const chipCount = Math.min(8, Math.floor(G.pot / 30));
+  chipStackEl.innerHTML = Array.from({length: chipCount}, () => `<span class="chip-icon"></span>`).join('');
+
+  const bar = document.getElementById('actionBar');
+  const me = G.players[0];
+  if (!G.handOver && G.toAct===0 && !me.folded && !me.allIn && me.chips>0) {
+    bar.classList.add('show');
+    const toCall = G.currentBet - me.bet;
+    document.getElementById('btnCheckCall').textContent = toCall===0 ? '체크' : `콜 ${toCall}`;
+    const minR = Math.max(G.currentBet + G.minRaise, me.bet + G.minRaise);
+    const maxR = me.bet + me.chips;
+    const slider = document.getElementById('raiseSlider');
+    slider.min = minR; slider.max = Math.max(minR, maxR);
+    slider.value = Math.min(maxR, Math.max(minR, Math.floor(G.currentBet*2.2)||minR));
+    document.getElementById('raiseVal').textContent = slider.value;
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
+/* ===== 실행 및 이벤트 연결 ===== */
+function startSingleGame() {
+  isOnline = false;
+  const n = +document.getElementById('playerCount').value;
+  const myName = document.getElementById('playerName').value;
+  
+  document.getElementById('lobbyPanel').style.display = 'none';
+  document.getElementById('gameInterface').style.display = 'block';
+
+  G = {
+    players: createPlayers(n, myName), button: n-1, difficulty: document.getElementById('difficulty').value,
+    pot:0, community:[], street:'preflop', deck:[], currentBet:0, minRaise:BB, toAct:0, handOver:false
+  };
+  document.getElementById('log').innerHTML='';
+  document.getElementById('btnNext').disabled=true;
+  startHand();
+}
+
+// 온라인 멀티 연결 로직
+function createOnlineRoom() {
+  const name = document.getElementById('playerName').value;
+  const room = document.getElementById('roomCode').value;
+  if (!name || !room) return alert('닉네임과 방 코드를 입력하세요');
+  initSocket();
+  socket.emit('createRoom', { roomCode: room, playerName: name });
+}
+
+function joinOnlineRoom() {
+  const name = document.getElementById('playerName').value;
+  const room = document.getElementById('roomCode').value;
+  if (!name || !room) return alert('닉네임과 방 코드를 입력하세요');
+  initSocket();
+  socket.emit('joinRoom', { roomCode: room, playerName: name });
+}
+
+function initSocket() {
+  if (!socket) socket = io();
+  isOnline = true;
+  socket.on('roomCreated', (code) => enterOnlineUI(code));
+  socket.on('roomJoined', (code) => enterOnlineUI(code));
+  socket.on('errorMsg', (msg) => alert(msg));
+}
+
+function enterOnlineUI(code) {
+  document.getElementById('lobbyPanel').style.display = 'none';
+  document.getElementById('gameInterface').style.display = 'block';
+  log(`[온라인] 방코드 ${code}에 입장했습니다.`);
+}
+
+document.getElementById('btnNew').onclick = () => {
+  if (!isOnline) startSingleGame();
+};
+document.getElementById('btnNext').onclick = ()=>{
+  if (isOnline) return;
+  G.players = G.players.filter(p=>p.chips>0 || p.human);
+  if (G.players.length<2) return log('게임 종료');
+  G.players.forEach((p,i)=>{ p.id=i; });
+  document.getElementById('btnNext').disabled=true;
+  startHand();
+};
+document.getElementById('btnFold').onclick = ()=> doAction(0,'fold');
+document.getElementById('btnCheckCall').onclick = ()=>{
+  const toCall = G.currentBet - G.players[0].bet;
+  doAction(0, toCall===0?'check':'call');
+};
+document.getElementById('btnRaise').onclick = ()=> doAction(0,'raise', +document.getElementById('raiseSlider').value);
+document.getElementById('btnAllIn').onclick = ()=> doAction(0,'allin');
+document.getElementById('raiseSlider').oninput = e=>{ document.getElementById('raiseVal').textContent = e.target.value; };
+</script>
+</body>
+</html>
